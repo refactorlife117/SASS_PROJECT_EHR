@@ -1,0 +1,239 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1d2330;
+  --muted: #5d6677;
+  --border: #d9dde4;
+  --accent: #1f6feb;
+  --danger: #c4314b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+.auth-card {
+  max-width: 380px;
+  margin: 10vh auto 0;
+  padding: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.auth-card h1 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+input {
+  padding: 9px 10px;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+button {
+  padding: 10px;
+  font-size: 1rem;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.secret {
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+  font-size: 0.85rem;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-main {
+  padding: 24px;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.app-nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.app-nav a.active,
+.app-nav a:hover {
+  color: var(--accent);
+}
+
+.toolbar,
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 12px 0 20px;
+}
+
+.inline-form {
+  align-items: center;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+select {
+  padding: 8px;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.day-group h2 {
+  margin: 24px 0 8px;
+  font-size: 1.05rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.table .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.table .actions button,
+.table .actions input {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+
+.row-muted td {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.row-muted td:last-child,
+.row-muted .badge {
+  text-decoration: none;
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+.badge {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.badge-booked {
+  background: #e7efff;
+  color: #1f4fb8;
+}
+
+.badge-confirmed {
+  background: #e3f6e8;
+  color: #1c7a3a;
+}
+
+.badge-cancelled {
+  background: #fde8ec;
+  color: var(--danger);
+}
+
+.badge-no_show {
+  background: #fff1db;
+  color: #9a5b00;
+}
+
+.badge-completed {
+  background: #eef0f3;
+  color: var(--muted);
+}
+
+.badge-slotfill {
+  background: #efe7ff;
+  color: #5b2fb8;
+}

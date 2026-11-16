@@ -1,0 +1,385 @@
+// Tenant-owned tables MUST have tenant_id and an RLS policy appended to their migration.
+// See docs/tenancy.md. Prisma cannot express RLS here.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  owner
+  staff
+
+  @@map("user_role")
+}
+
+enum AuditActorType {
+  user
+  system
+  patient
+
+  @@map("audit_actor_type")
+}
+
+model Tenant {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  timezone   String
+  smsNumber  String?  @unique @map("sms_number")
+  // Shown in HELP replies, e.g. "(555) 010-0001".
+  contactPhone String? @map("contact_phone")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  settings       TenantSettings?
+  users          User[]
+  sessions       Session[]
+  auditLog       AuditLog[]
+  ehrConnection  EhrConnection?
+  providers      Provider[]
+  visitTypes     VisitType[]
+  patients       Patient[]
+  appointments   Appointment[]
+  messages       Message[]
+  smsConsents    SmsConsent[]
+
+  @@map("tenants")
+}
+
+model TenantSettings {
+  tenantId               String   @id @map("tenant_id") @db.Uuid
+  reminderHoursBefore    Int[]    @default([48, 24]) @map("reminder_hours_before")
+  offerBatchSize         Int      @default(3) @map("offer_batch_size")
+  offerBatchTimeoutMin   Int      @default(15) @map("offer_batch_timeout_min")
+  minNoticeMin           Int      @default(120) @map("min_notice_min")
+  backfillHorizonDays    Int      @default(14) @map("backfill_horizon_days")
+  // Tenant-local wall-clock times, "HH:MM".
+  quietHoursStart        String   @default("21:00") @map("quiet_hours_start")
+  quietHoursEnd          String   @default("08:00") @map("quiet_hours_end")
+  autoWaitlistInvite     Boolean  @default(true) @map("auto_waitlist_invite")
+  autoWaitlistMinDaysOut Int      @default(10) @map("auto_waitlist_min_days_out")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_settings")
+}
+
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  // Always stored lower-cased.
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  mfaSecretEnc Bytes?   @map("mfa_secret_enc")
+  mfaEnabled   Boolean  @default(false) @map("mfa_enabled")
+  // Last accepted TOTP time step; codes at or before it are rejected (replay protection).
+  mfaLastTimeStep Int?  @map("mfa_last_time_step")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Session {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  // HMAC-SHA256 of the cookie token. The raw token is never stored.
+  tokenHash     String    @unique @map("token_hash")
+  // Null until the user passes MFA. Only MFA-verified sessions can access PHI routes.
+  mfaVerifiedAt DateTime? @map("mfa_verified_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id        BigInt         @id @default(autoincrement())
+  tenantId  String         @map("tenant_id") @db.Uuid
+  actorType AuditActorType @map("actor_type")
+  actorId   String?        @map("actor_id")
+  action    String
+  entity    String?
+  entityId  String?        @map("entity_id")
+  ip        String?        @db.Inet
+  at        DateTime       @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, at])
+  @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------------------------
+// EHR integration (SlotFill's synced copy). The EHR is the source of truth; these are upserted by
+// the sync job and keyed by the EHR's own ids.
+// ---------------------------------------------------------------------------------------------
+
+enum EhrType {
+  mock
+
+  @@map("ehr_type")
+}
+
+enum EhrConnectionStatus {
+  active
+  error
+  disabled
+
+  @@map("ehr_connection_status")
+}
+
+enum AppointmentStatus {
+  booked
+  confirmed
+  cancelled
+  no_show
+  completed
+
+  @@map("appointment_status")
+}
+
+enum AppointmentSource {
+  ehr
+  slotfill
+
+  @@map("appointment_source")
+}
+
+model EhrConnection {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // One EHR per tenant for the MVP.
+  tenantId       String              @unique @map("tenant_id") @db.Uuid
+  ehrType        EhrType             @map("ehr_type")
+  credentialsEnc Bytes?              @map("credentials_enc")
+  status         EhrConnectionStatus @default(active)
+  // Cursor for incremental sync: the start time of the last successful sync.
+  lastSyncedAt   DateTime?           @map("last_synced_at") @db.Timestamptz(6)
+  lastFullSyncAt DateTime?           @map("last_full_sync_at") @db.Timestamptz(6)
+  // Error class/code only. Never PHI.
+  lastError      String?             @map("last_error")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ehr_connections")
+}
+
+model Provider {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String @map("tenant_id") @db.Uuid
+  ehrProviderId String @map("ehr_provider_id")
+  displayName   String @map("display_name")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@unique([tenantId, ehrProviderId])
+  @@map("providers")
+}
+
+model VisitType {
+  id                  String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String @map("tenant_id") @db.Uuid
+  code                String
+  name                String
+  durationMin         Int    @map("duration_min")
+  // Set by the clinic (Phase 6); drives "revenue recovered".
+  estimatedValueCents Int    @default(0) @map("estimated_value_cents")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@unique([tenantId, code])
+  @@map("visit_types")
+}
+
+model Patient {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  ehrPatientId String  @map("ehr_patient_id")
+  firstName    String  @map("first_name")
+  lastName     String  @map("last_name")
+  // E.164. Several patients may share one number (e.g. a parent and children).
+  mobileE164   String? @map("mobile_e164")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@unique([tenantId, ehrPatientId])
+  @@index([tenantId, mobileE164])
+  @@map("patients")
+}
+
+model Appointment {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String            @map("tenant_id") @db.Uuid
+  ehrAppointmentId String            @map("ehr_appointment_id")
+  patientId        String            @map("patient_id") @db.Uuid
+  providerId       String            @map("provider_id") @db.Uuid
+  visitTypeId      String            @map("visit_type_id") @db.Uuid
+  startsAt         DateTime          @map("starts_at") @db.Timestamptz(6)
+  durationMin      Int               @map("duration_min")
+  status           AppointmentStatus
+  source           AppointmentSource @default(ehr)
+  // The EHR's last-modified time for this appointment; older updates are ignored.
+  ehrUpdatedAt     DateTime          @map("ehr_updated_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  visitType VisitType @relation(fields: [visitTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, ehrAppointmentId])
+  @@index([tenantId, startsAt])
+  @@map("appointments")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Mock EHR (dev/test only). A fake external EHR living in mock_* tables, reached ONLY through the
+// mock EhrAdapter and the /dev/ehr routes. Never read these from domain code.
+// ---------------------------------------------------------------------------------------------
+
+model MockProvider {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  displayName String @map("display_name")
+
+  @@index([tenantId])
+  @@map("mock_providers")
+}
+
+model MockVisitType {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  code        String
+  name        String
+  durationMin Int    @map("duration_min")
+
+  @@unique([tenantId, code])
+  @@map("mock_visit_types")
+}
+
+model MockPatient {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  firstName  String  @map("first_name")
+  lastName   String  @map("last_name")
+  mobileE164 String? @map("mobile_e164")
+
+  @@index([tenantId])
+  @@map("mock_patients")
+}
+
+model MockAppointment {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String            @map("tenant_id") @db.Uuid
+  patientId     String            @map("patient_id") @db.Uuid
+  providerId    String            @map("provider_id") @db.Uuid
+  visitTypeCode String            @map("visit_type_code")
+  startsAt      DateTime          @map("starts_at") @db.Timestamptz(6)
+  durationMin   Int               @map("duration_min")
+  status        AppointmentStatus
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([tenantId, startsAt])
+  @@index([tenantId, updatedAt])
+  @@map("mock_appointments")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Messaging (SMS). Bodies are PHI: stored here because they must be, never logged.
+// ---------------------------------------------------------------------------------------------
+
+enum MessageDirection {
+  outbound
+  inbound
+
+  @@map("message_direction")
+}
+
+enum MessageContextType {
+  reminder
+  offer
+  waitlist_invite
+  system
+
+  @@map("message_context_type")
+}
+
+enum MessageStatus {
+  queued
+  sent
+  delivered
+  failed
+  received
+
+  @@map("message_status")
+}
+
+enum ConsentStatus {
+  opted_in
+  opted_out
+
+  @@map("consent_status")
+}
+
+model Message {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String              @map("tenant_id") @db.Uuid
+  direction         MessageDirection
+  // The patient-side number (E.164); the clinic side is always tenants.sms_number.
+  mobileE164        String              @map("mobile_e164")
+  body              String
+  provider          String
+  // Unique per provider: makes inbound webhooks idempotent. Null until an outbound is sent.
+  providerMessageId String?             @map("provider_message_id")
+  contextType       MessageContextType? @map("context_type")
+  contextId         String?             @map("context_id") @db.Uuid
+  status            MessageStatus
+  // Inbound messages SlotFill couldn't act on; shown to staff until resolved.
+  needsAttention    Boolean             @default(false) @map("needs_attention")
+  // Short machine reason only (e.g. "opted_out"), never PHI.
+  failureReason     String?             @map("failure_reason")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerMessageId])
+  @@index([tenantId, mobileE164, createdAt])
+  @@index([tenantId, needsAttention])
+  @@index([tenantId, contextType, contextId])
+  @@map("messages")
+}
+
+model SmsConsent {
+  tenantId   String        @map("tenant_id") @db.Uuid
+  mobileE164 String        @map("mobile_e164")
+  status     ConsentStatus
+  // How it changed, e.g. "keyword:STOP".
+  source     String
+  updatedAt  DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, mobileE164])
+  @@map("sms_consents")
+}

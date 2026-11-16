@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Dependencies allowed to run install scripts (pnpm blocks them by default).
+allowBuilds:
+  esbuild: true
+  prisma: true
+  '@prisma/engines': true
+
+minimumReleaseAgeExclude:
+  - nodemailer@10.6.0
