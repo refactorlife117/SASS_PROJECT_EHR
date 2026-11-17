@@ -52,7 +52,7 @@ interface SmsProvider {
 }
 ```
 
-Selected by `SMS_PROVIDER=dev|aws|twilio`.
+Selected by `SMS_PROVIDER=dev|aws|twilio` (the default). **Implemented:** all three (`apps/api/src/providers/sms/`). The registry also exposes other configured providers, and each clinic can choose one (`tenants.sms_provider`). Providers may set `ackResponse` (Twilio answers TwiML).
 
 - **`dev`** (build now): `send` stores the message and emails it via Nodemailer to Mailpit (subject: `SMS to +1555…`; view at http://localhost:8025). The **phone simulator** (`/dev/phone`, dev only) lists conversations per number and lets you type a reply. A reply calls `POST /api/dev/sms/inbound`, which runs the **same inbound handler** as the real webhook.
 - **`aws`** (Phase 7): AWS End User Messaging SMS for sending. Inbound goes two-way SMS → SNS topic → HTTPS endpoint.
@@ -91,4 +91,4 @@ interface EhrAdapter {
   - Adds `listVisitTypes()`, which backfill needs.
   - `getPatient` returns `null` for an unknown id.
   - `bookAppointment` throws `EhrSlotUnavailableError` when the slot was taken in the meantime.
-- **Real adapter** (Phase 8): the EHR is chosen later (athenahealth, Elation or DrChrono). It uses webhooks or change subscriptions where available, and polling otherwise.
+- **Real adapter** (Phase 8): **DrChrono** (`providers/ehr/drchrono.ts`), with OAuth2 tokens stored encrypted in `ehr_connections.credentials_enc`. Its webhook triggers an incremental sync; 2-minute polling is the backstop. Adding another EHR means adding a value to the `EhrType` enum plus an adapter; the `Record<EhrType, …>` factory won't compile until it exists.

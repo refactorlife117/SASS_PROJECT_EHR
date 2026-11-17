@@ -1,12 +1,15 @@
+import { createHash } from 'node:crypto';
 import type { MeResponse } from '@slotfill/shared';
 import { generateSecret, generateURI, verify as verifyTotp } from 'otplib';
 import type { Database } from '../../db/client';
 import type { UserRole } from '../../generated/prisma/client';
-import type { FieldCipher } from '../../lib/crypto';
+import type { Clock } from '../../lib/clock';
+import { randomToken, type FieldCipher } from '../../lib/crypto';
+import type { EmailSender } from '../../lib/email';
 import { AppError } from '../../lib/errors';
 import { recordAudit } from '../audit/audit';
 import type { AuthContext } from './middleware';
-import { verifyPassword } from './passwords';
+import { hashPassword, verifyPassword } from './passwords';
 import type { SessionStore } from './sessions';
 
 const TOTP_ISSUER = 'SlotFill';
@@ -25,12 +28,87 @@ const invalidCredentials = () =>
   new AppError(401, 'invalid_credentials', 'Invalid email or password');
 const invalidCode = () => new AppError(401, 'invalid_mfa_code', 'Invalid code');
 
+/** Password reset links are valid this long and work once. */
+export const RESET_TOKEN_TTL_MS = 30 * 60_000;
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+interface ResetTokenRow {
+  user_id: string;
+  tenant_id: string;
+  expires_at: Date | null;
+}
+
 export class AuthService {
   constructor(
     private readonly db: Database,
     private readonly sessions: SessionStore,
     private readonly cipher: FieldCipher,
+    private readonly mail: { email: EmailSender; appBaseUrl: string; clock: Clock },
   ) {}
+
+  /**
+   * "Forgot password": email a single-use link if the account exists. Callers always answer the same
+   * way, so the response never reveals whether an email is registered.
+   */
+  async requestPasswordReset(email: string, ip: string | undefined): Promise<void> {
+    const rows = await this.db.unscoped.$queryRaw<FoundUserRow[]>`
+      SELECT * FROM auth_find_user_by_email(${email})`;
+    const user = rows[0];
+    if (!user) return;
+    const token = randomToken();
+    await this.db.withTenant(user.tenant_id, async (tx) => {
+      await tx.user.update({
+        where: { id: user.user_id },
+        data: {
+          resetTokenHash: sha256(token),
+          resetExpiresAt: new Date(this.mail.clock.now().getTime() + RESET_TOKEN_TTL_MS),
+        },
+      });
+      await recordAudit(tx, user.tenant_id, {
+        actorType: 'user',
+        actorId: user.user_id,
+        action: 'auth.password_reset_requested',
+        entity: 'user',
+        entityId: user.user_id,
+        ip,
+      });
+    });
+    const link = `${this.mail.appBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+    await this.mail.email.send({
+      to: email,
+      subject: 'Reset your SlotFill password',
+      text:
+        `Someone (hopefully you) asked to reset your SlotFill password.\n\n` +
+        `Reset it here (link valid for 30 minutes, works once):\n${link}\n\n` +
+        `If you didn't ask, you can ignore this email. Your password won't change.`,
+    });
+  }
+
+  /** Set a new password with a reset token. Signs the user out everywhere; MFA stays required. */
+  async resetPassword(token: string, newPassword: string, ip: string | undefined): Promise<void> {
+    const rows = await this.db.unscoped.$queryRaw<ResetTokenRow[]>`
+      SELECT * FROM auth_find_user_by_reset_token(${sha256(token)})`;
+    const found = rows[0];
+    if (!found?.expires_at || found.expires_at <= this.mail.clock.now()) {
+      throw new AppError(400, 'invalid_reset_token', 'This reset link is invalid or has expired');
+    }
+    const passwordHash = await hashPassword(newPassword);
+    await this.db.withTenant(found.tenant_id, async (tx) => {
+      await tx.user.update({
+        where: { id: found.user_id },
+        data: { passwordHash, resetTokenHash: null, resetExpiresAt: null },
+      });
+      await tx.session.deleteMany({ where: { userId: found.user_id } });
+      await recordAudit(tx, found.tenant_id, {
+        actorType: 'user',
+        actorId: found.user_id,
+        action: 'auth.password_reset',
+        entity: 'user',
+        entityId: found.user_id,
+        ip,
+      });
+    });
+  }
 
   /** Step 1: password. Returns a pending (pre-MFA) session token and the next step. */
   async login(input: { email: string; password: string; ip: string | undefined }) {

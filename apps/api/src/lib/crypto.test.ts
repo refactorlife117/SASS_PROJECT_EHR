@@ -25,6 +25,14 @@ describe('createFieldCipher', () => {
     expect(() => other.decrypt(payload)).toThrow();
   });
 
+  it('accepts the key as 64 hex characters (Secrets Manager) as well as base64', () => {
+    const hex = 'ab'.repeat(32);
+    const payload = createFieldCipher(hex).encrypt('x');
+    expect(createFieldCipher(Buffer.from(hex, 'hex').toString('base64')).decrypt(payload)).toBe(
+      'x',
+    );
+  });
+
   it('rejects a key that is not 32 bytes', () => {
     expect(() => createFieldCipher(Buffer.alloc(16).toString('base64'))).toThrow();
   });

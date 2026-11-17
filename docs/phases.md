@@ -1,19 +1,21 @@
 # Phases and acceptance criteria
 
+> **2026-11-16:** the user authorized running Phases 3–9 back to back without stopping for review between phases. All decisions taken are logged in decisions.md, and the usage guide is in USAGE.md.
+
 Work one phase at a time. At the end of a phase: stop, summarize what was built, list the verification steps, and wait for review. When a phase is accepted, set its status here **and** update the "Current phase" line in `CLAUDE.md`.
 
-| Phase                                 | Status    |
-| ------------------------------------- | --------- |
-| 0 — Scaffold                          | ✅ done   |
-| 1 — Tenancy, auth, audit              | ✅ done   |
-| 2 — Mock EHR + sync                   | 🔍 review |
-| 3 — Messaging layer                   | ☐         |
-| 4 — Reminders                         | ☐         |
-| 5 — Waitlist + offer engine + booking | ☐         |
-| 6 — Dashboard + settings              | ☐         |
-| 7 — Hardening + AWS deployment        | ☐         |
-| 8 — First real EHR adapter            | ☐         |
-| 9 — Twilio adapter (optional)         | ☐         |
+| Phase                                 | Status                                                                            |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| 0 — Scaffold                          | ✅ done                                                                           |
+| 1 — Tenancy, auth, audit              | ✅ done                                                                           |
+| 2 — Mock EHR + sync                   | ✅ done                                                                           |
+| 3 — Messaging layer                   | ✅ done                                                                           |
+| 4 — Reminders                         | ✅ done                                                                           |
+| 5 — Waitlist + offer engine + booking | ✅ done                                                                           |
+| 6 — Dashboard + settings              | ✅ done                                                                           |
+| 7 — Hardening + AWS deployment        | 🟡 built + verified offline; deploy pending (needs AWS account)                   |
+| 8 — First real EHR adapter            | 🟡 built + contract-tested; sandbox verification pending (needs DrChrono account) |
+| 9 — Twilio adapter (optional)         | ✅ done (inactive until Twilio BAA + credentials)                                 |
 
 ---
 

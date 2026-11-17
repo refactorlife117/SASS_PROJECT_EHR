@@ -6,6 +6,7 @@ import { MockEhr } from '../src/providers/ehr/mock';
 import { createMockAppointment, createMockEhr, inDays } from './ehr-fixtures';
 import {
   admin,
+  cipher,
   createTenant,
   createTestContext,
   queuedJobs,
@@ -18,7 +19,7 @@ const { db, jobs } = ctx;
 const sync = new EhrSyncService({
   db,
   jobs,
-  adapterFor: createEhrAdapterFactory({ db }),
+  adapterFor: createEhrAdapterFactory({ db, cipher }),
   logger: silentLogger,
 });
 
@@ -82,6 +83,7 @@ describe('full sync (backfill)', () => {
         change: 'created',
         previousStatus: null,
         status: 'booked',
+        backfill: true, // first sync of this connection
       },
     ]);
   });
@@ -299,7 +301,7 @@ describe('worker jobs', () => {
     });
     await createTenant('No EHR');
 
-    const deps = { db, jobs, sync, logger: silentLogger };
+    const deps = ctx.services;
     expect(await enqueueSyncForAllTenants(deps, 'incremental')).toBe(2);
     const queued = (await queuedJobs('ehr.sync')) as { tenantId: string; mode: string }[];
     expect(queued.map((j) => j.tenantId).sort()).toEqual([a.tenant.id, b.id].sort());
@@ -308,7 +310,7 @@ describe('worker jobs', () => {
 
   it('does not queue a second sync for a tenant that already has one waiting', async () => {
     const { tenant } = await tenantWithOneAppointment();
-    const deps = { db, jobs, sync, logger: silentLogger };
+    const deps = ctx.services;
     await enqueueSyncForAllTenants(deps, 'incremental');
     await enqueueSyncForAllTenants(deps, 'incremental');
     expect(await queuedJobs('ehr.sync')).toEqual([{ tenantId: tenant.id, mode: 'incremental' }]);
@@ -316,7 +318,7 @@ describe('worker jobs', () => {
 
   it('settles each job in a batch on its own: one bad payload does not fail the others', async () => {
     const { tenant } = await tenantWithOneAppointment();
-    const deps = { db, jobs, sync, logger: silentLogger };
+    const deps = ctx.services;
     const results = await runBatch('ehr.sync', deps, [
       { id: 'good', data: { tenantId: tenant.id, mode: 'full' } },
       { id: 'bad', data: { tenantId: 'not-a-uuid', mode: 'full' } },
@@ -330,7 +332,7 @@ describe('worker jobs', () => {
 
   it('the ehr.sync handler validates its payload and runs the sync', async () => {
     const { tenant } = await tenantWithOneAppointment();
-    const deps = { db, jobs, sync, logger: silentLogger };
+    const deps = ctx.services;
     await jobHandlers['ehr.sync'](deps, {
       id: 'j1',
       data: { tenantId: tenant.id, mode: 'full' },

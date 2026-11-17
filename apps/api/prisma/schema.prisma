@@ -26,41 +26,48 @@ enum AuditActorType {
 }
 
 model Tenant {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name       String
-  timezone   String
-  smsNumber  String?  @unique @map("sms_number")
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  timezone     String
+  smsNumber    String?  @unique @map("sms_number")
   // Shown in HELP replies, e.g. "(555) 010-0001".
-  contactPhone String? @map("contact_phone")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  contactPhone String?  @map("contact_phone")
+  // SMS provider for this clinic (dev | aws | twilio); null = the deployment default.
+  smsProvider  String?  @map("sms_provider")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  settings       TenantSettings?
-  users          User[]
-  sessions       Session[]
-  auditLog       AuditLog[]
-  ehrConnection  EhrConnection?
-  providers      Provider[]
-  visitTypes     VisitType[]
-  patients       Patient[]
-  appointments   Appointment[]
-  messages       Message[]
-  smsConsents    SmsConsent[]
+  settings        TenantSettings?
+  users           User[]
+  sessions        Session[]
+  auditLog        AuditLog[]
+  ehrConnection   EhrConnection?
+  providers       Provider[]
+  visitTypes      VisitType[]
+  patients        Patient[]
+  appointments    Appointment[]
+  messages        Message[]
+  smsConsents     SmsConsent[]
+  reminders       Reminder[]
+  waitlist        WaitlistEntry[]
+  slotOffers      SlotOffer[]
+  offerRecipients OfferRecipient[]
+  waitlistInvites WaitlistInvite[]
 
   @@map("tenants")
 }
 
 model TenantSettings {
-  tenantId               String   @id @map("tenant_id") @db.Uuid
-  reminderHoursBefore    Int[]    @default([48, 24]) @map("reminder_hours_before")
-  offerBatchSize         Int      @default(3) @map("offer_batch_size")
-  offerBatchTimeoutMin   Int      @default(15) @map("offer_batch_timeout_min")
-  minNoticeMin           Int      @default(120) @map("min_notice_min")
-  backfillHorizonDays    Int      @default(14) @map("backfill_horizon_days")
+  tenantId               String  @id @map("tenant_id") @db.Uuid
+  reminderHoursBefore    Int[]   @default([48, 24]) @map("reminder_hours_before")
+  offerBatchSize         Int     @default(3) @map("offer_batch_size")
+  offerBatchTimeoutMin   Int     @default(15) @map("offer_batch_timeout_min")
+  minNoticeMin           Int     @default(120) @map("min_notice_min")
+  backfillHorizonDays    Int     @default(14) @map("backfill_horizon_days")
   // Tenant-local wall-clock times, "HH:MM".
-  quietHoursStart        String   @default("21:00") @map("quiet_hours_start")
-  quietHoursEnd          String   @default("08:00") @map("quiet_hours_end")
-  autoWaitlistInvite     Boolean  @default(true) @map("auto_waitlist_invite")
-  autoWaitlistMinDaysOut Int      @default(10) @map("auto_waitlist_min_days_out")
+  quietHoursStart        String  @default("21:00") @map("quiet_hours_start")
+  quietHoursEnd          String  @default("08:00") @map("quiet_hours_end")
+  autoWaitlistInvite     Boolean @default(true) @map("auto_waitlist_invite")
+  autoWaitlistMinDaysOut Int     @default(10) @map("auto_waitlist_min_days_out")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -68,17 +75,20 @@ model TenantSettings {
 }
 
 model User {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
   // Always stored lower-cased.
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  role         UserRole
-  mfaSecretEnc Bytes?   @map("mfa_secret_enc")
-  mfaEnabled   Boolean  @default(false) @map("mfa_enabled")
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  role            UserRole
+  mfaSecretEnc    Bytes?    @map("mfa_secret_enc")
+  mfaEnabled      Boolean   @default(false) @map("mfa_enabled")
   // Last accepted TOTP time step; codes at or before it are rejected (replay protection).
-  mfaLastTimeStep Int?  @map("mfa_last_time_step")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  mfaLastTimeStep Int?      @map("mfa_last_time_step")
+  // Password reset: SHA-256 of a single-use emailed token, and its expiry. The token is never stored.
+  resetTokenHash  String?   @unique @map("reset_token_hash")
+  resetExpiresAt  DateTime? @map("reset_expires_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sessions Session[]
@@ -131,6 +141,7 @@ model AuditLog {
 
 enum EhrType {
   mock
+  drchrono
 
   @@map("ehr_type")
 }
@@ -185,8 +196,10 @@ model Provider {
   ehrProviderId String @map("ehr_provider_id")
   displayName   String @map("display_name")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   appointments Appointment[]
+  waitlist     WaitlistEntry[]
+  slotOffers   SlotOffer[]
 
   @@unique([tenantId, ehrProviderId])
   @@map("providers")
@@ -201,8 +214,11 @@ model VisitType {
   // Set by the clinic (Phase 6); drives "revenue recovered".
   estimatedValueCents Int    @default(0) @map("estimated_value_cents")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   appointments Appointment[]
+  waitlist     WaitlistEntry[]
+  offers       SlotOffer[]     @relation("OfferVisitType")
+  filledOffers SlotOffer[]     @relation("OfferFilledVisitType")
 
   @@unique([tenantId, code])
   @@map("visit_types")
@@ -217,8 +233,11 @@ model Patient {
   // E.164. Several patients may share one number (e.g. a parent and children).
   mobileE164   String? @map("mobile_e164")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  appointments Appointment[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments    Appointment[]
+  waitlist        WaitlistEntry[]
+  offerRecipients OfferRecipient[]
+  filledOffers    SlotOffer[]      @relation("OfferFilledBy")
 
   @@unique([tenantId, ehrPatientId])
   @@index([tenantId, mobileE164])
@@ -241,10 +260,14 @@ model Appointment {
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  visitType VisitType @relation(fields: [visitTypeId], references: [id], onDelete: Cascade)
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient         Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  provider        Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  visitType       VisitType       @relation(fields: [visitTypeId], references: [id], onDelete: Cascade)
+  reminders       Reminder[]
+  waitlistEntries WaitlistEntry[] @relation("WaitlistCurrentAppointment")
+  sourceOfOffer   SlotOffer?      @relation("OfferSourceAppointment")
+  waitlistInvite  WaitlistInvite?
 
   @@unique([tenantId, ehrAppointmentId])
   @@index([tenantId, startsAt])
@@ -382,4 +405,196 @@ model SmsConsent {
 
   @@id([tenantId, mobileE164])
   @@map("sms_consents")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reminders. One row per (appointment, hours-before, appointment time). The row id is the SMS
+// context id, so a "1"/"2" reply resolves to exactly this appointment.
+// ---------------------------------------------------------------------------------------------
+
+enum ReminderStatus {
+  scheduled
+  sent
+  skipped
+  cancelled
+
+  @@map("reminder_status")
+}
+
+model Reminder {
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String         @map("tenant_id") @db.Uuid
+  appointmentId       String         @map("appointment_id") @db.Uuid
+  hoursBefore         Int            @map("hours_before")
+  // Snapshot of the appointment time this reminder was planned for; a mismatch at send time
+  // means the appointment moved (a fresh reminder exists for the new time).
+  appointmentStartsAt DateTime       @map("appointment_starts_at") @db.Timestamptz(6)
+  // When it is due (startsAt - hoursBefore), or later if deferred for quiet hours.
+  sendAfter           DateTime       @map("send_after") @db.Timestamptz(6)
+  status              ReminderStatus @default(scheduled)
+  // Short machine reason, e.g. "opted_out", "not_booked". Never PHI.
+  skipReason          String?        @map("skip_reason")
+  messageId           String?        @map("message_id") @db.Uuid
+  sentAt              DateTime?      @map("sent_at") @db.Timestamptz(6)
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, hoursBefore, appointmentStartsAt])
+  @@index([tenantId, status])
+  @@map("reminders")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Waitlist, offers and booking (Phase 5).
+// ---------------------------------------------------------------------------------------------
+
+enum WaitlistStatus {
+  active
+  fulfilled
+  removed
+
+  @@map("waitlist_status")
+}
+
+enum WaitlistSource {
+  staff
+  sms_opt_in
+
+  @@map("waitlist_source")
+}
+
+model WaitlistEntry {
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String         @map("tenant_id") @db.Uuid
+  patientId            String         @map("patient_id") @db.Uuid
+  // Null = any provider.
+  providerId           String?        @map("provider_id") @db.Uuid
+  visitTypeId          String         @map("visit_type_id") @db.Uuid
+  // Their existing (later) appointment, moved if they take an earlier slot.
+  currentAppointmentId String?        @map("current_appointment_id") @db.Uuid
+  // Tenant-local calendar date: don't offer slots before this day.
+  earliestDate         DateTime       @map("earliest_date") @db.Date
+  // e.g. [{"dow":[1,2,3],"from":"09:00","to":"13:00"}] in tenant-local time; null = any time.
+  preferredWindows     Json?          @map("preferred_windows")
+  status               WaitlistStatus @default(active)
+  source               WaitlistSource
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient            Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  provider           Provider?        @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  visitType          VisitType        @relation(fields: [visitTypeId], references: [id], onDelete: Cascade)
+  currentAppointment Appointment?     @relation("WaitlistCurrentAppointment", fields: [currentAppointmentId], references: [id], onDelete: SetNull)
+  offerRecipients    OfferRecipient[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("waitlist_entries")
+}
+
+enum OfferStatus {
+  open
+  filled
+  expired
+  cancelled
+
+  @@map("offer_status")
+}
+
+enum OfferReply {
+  accepted
+  declined
+
+  @@map("offer_reply")
+}
+
+enum OfferOutcome {
+  won
+  too_late
+
+  @@map("offer_outcome")
+}
+
+model SlotOffer {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String      @map("tenant_id") @db.Uuid
+  providerId          String      @map("provider_id") @db.Uuid
+  // Visit type of the cancelled appointment (the slot's original use).
+  visitTypeId         String      @map("visit_type_id") @db.Uuid
+  startsAt            DateTime    @map("starts_at") @db.Timestamptz(6)
+  durationMin         Int         @map("duration_min")
+  // One offer per cancelled appointment.
+  sourceAppointmentId String      @unique @map("source_appointment_id") @db.Uuid
+  status              OfferStatus @default(open)
+  // Short machine reason when cancelled (e.g. "slot_taken_in_ehr", "staff"). Never PHI.
+  cancelReason        String?     @map("cancel_reason")
+  nextBatchNo         Int         @default(1) @map("next_batch_no")
+  filledByPatientId   String?     @map("filled_by_patient_id") @db.Uuid
+  filledAppointmentId String?     @map("filled_appointment_id") @db.Uuid
+  // Visit type of the booking that filled it (drives "revenue recovered").
+  filledVisitTypeId   String?     @map("filled_visit_type_id") @db.Uuid
+  filledAt            DateTime?   @map("filled_at") @db.Timestamptz(6)
+  expiresAt           DateTime    @map("expires_at") @db.Timestamptz(6)
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider          Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  visitType         VisitType        @relation("OfferVisitType", fields: [visitTypeId], references: [id], onDelete: Cascade)
+  filledVisitType   VisitType?       @relation("OfferFilledVisitType", fields: [filledVisitTypeId], references: [id], onDelete: SetNull)
+  sourceAppointment Appointment      @relation("OfferSourceAppointment", fields: [sourceAppointmentId], references: [id], onDelete: Cascade)
+  filledByPatient   Patient?         @relation("OfferFilledBy", fields: [filledByPatientId], references: [id], onDelete: SetNull)
+  recipients        OfferRecipient[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("slot_offers")
+}
+
+model OfferRecipient {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  offerId         String        @map("offer_id") @db.Uuid
+  waitlistEntryId String        @map("waitlist_entry_id") @db.Uuid
+  patientId       String        @map("patient_id") @db.Uuid
+  mobileE164      String        @map("mobile_e164")
+  batchNo         Int           @map("batch_no")
+  messageId       String?       @map("message_id") @db.Uuid
+  sentAt          DateTime?     @map("sent_at") @db.Timestamptz(6)
+  reply           OfferReply?
+  replyMessageId  String?       @map("reply_message_id") @db.Uuid
+  repliedAt       DateTime?     @map("replied_at") @db.Timestamptz(6)
+  outcome         OfferOutcome?
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  offer         SlotOffer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  waitlistEntry WaitlistEntry @relation(fields: [waitlistEntryId], references: [id], onDelete: Cascade)
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, waitlistEntryId])
+  @@index([tenantId, mobileE164])
+  @@map("offer_recipients")
+}
+
+enum WaitlistInviteStatus {
+  sent
+  accepted
+
+  @@map("waitlist_invite_status")
+}
+
+// "Want an earlier appointment? Reply EARLY". At most one per appointment; the id is the SMS context.
+model WaitlistInvite {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String               @map("tenant_id") @db.Uuid
+  appointmentId String               @unique @map("appointment_id") @db.Uuid
+  status        WaitlistInviteStatus @default(sent)
+  messageId     String?              @map("message_id") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@map("waitlist_invites")
 }

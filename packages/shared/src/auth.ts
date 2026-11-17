@@ -39,3 +39,18 @@ export const apiErrorSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
 });
 export type ApiErrorBody = z.infer<typeof apiErrorSchema>;
+
+export const passwordForgotSchema = z.object({
+  email: z
+    .email()
+    .max(254)
+    .transform((email) => email.toLowerCase()),
+});
+
+/** Staff passwords: at least 12 characters (NIST 800-63B favors length over composition rules). */
+export const passwordSchema = z.string().min(12, 'must be at least 12 characters').max(256);
+
+export const passwordResetSchema = z.object({
+  token: z.string().min(20).max(200),
+  password: passwordSchema,
+});

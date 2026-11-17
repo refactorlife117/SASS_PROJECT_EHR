@@ -55,6 +55,12 @@ These are `SECURITY DEFINER` functions owned by the table owner, with `search_pa
 
 Planned: a lookup from tenant to SMS number for inbound SMS routing (Phase 3). Add each new one to this table.
 
+`sms_tenant_by_number(number)` (used by `MessagingService.handleInbound`) returns the tenant id that owns an inbound `to` number.
+
+`auth_find_user_by_reset_token(token_hash)` (password reset, Phase 7) returns user id, tenant id and expiry for a reset token hash.
+
+`ehr_tenants_by_provider(ehr_type, ehr_provider_id)` (EHR webhooks, Phase 8) returns the tenant ids with an active connection of that EHR type that have that provider.
+
 `ehr_list_active_connections()` (used by `enqueueSyncForAllTenants` in the worker) returns the tenant ids with an active EHR connection, and nothing else.
 
 ## Privileges worth knowing

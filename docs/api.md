@@ -42,3 +42,21 @@ Every body, query and webhook payload is validated with a zod schema from `packa
 - `/settings`: reminder timings, batch size/timeout, quiet hours, visit-type values
 - `/dev/phone` (dev only): simulated phones; view texts and send replies
 - `/dev/ehr` (dev only): mock EHR schedule; cancel, create and move appointments
+
+## Implemented endpoints (all phases)
+
+All endpoints are under `/api/v1`. **S** = signed-in (password + MFA), **O** = owner only, **P** = public, **W** = webhook (signature-verified).
+
+| Area                           | Endpoints                                                                                                                                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health                         | P `GET /health`, P `GET /health/ready` (checks the database)                                                                                                                                               |
+| Auth                           | P `POST /auth/login`, `POST /auth/mfa/setup`, `POST /auth/mfa/verify` (pending session), `POST /auth/logout`, S `GET /auth/me`, P `POST /auth/password/forgot` (always 202), P `POST /auth/password/reset` |
+| Dashboard                      | S `GET /dashboard/summary?from&to`                                                                                                                                                                         |
+| Appointments                   | S `GET /appointments?from&to&providerId&status`, S `GET /providers`                                                                                                                                        |
+| Waitlist                       | S `GET /waitlist?status`, S `POST /waitlist`, S `PATCH /waitlist/:id`, S `DELETE /waitlist/:id` (soft), S `GET /patients?search`                                                                           |
+| Offers                         | S `GET /offers?status`, S `GET /offers/:id`, S `POST /offers/:id/cancel`                                                                                                                                   |
+| Messages                       | S `GET /messages?mobile&context`, S `GET /messages/needs-attention`, S `POST /messages/:id/resolve`                                                                                                        |
+| Settings                       | S `GET /settings`, O `PATCH /settings` (incl. `smsProvider`), S `GET /visit-types`, O `PATCH /visit-types/:id`                                                                                             |
+| EHR                            | S `GET /ehr/connection`, O `POST /ehr/drchrono/authorize`, P `GET /ehr/drchrono/callback` (signed state cookie)                                                                                            |
+| Webhooks                       | W `POST /webhooks/sms/:provider` (`dev`, `aws` via SNS, `twilio`), W `GET\|POST /webhooks/ehr/drchrono`                                                                                                    |
+| Dev only (development/staging) | `/dev/ehr/*` (state, create, move, cancel, sync, remind-now, reminders/replan), `/dev/sms/*` (conversations, inbound, send-test)                                                                           |

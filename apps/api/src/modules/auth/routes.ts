@@ -1,6 +1,8 @@
 import {
   loginRequestSchema,
   mfaVerifyRequestSchema,
+  passwordForgotSchema,
+  passwordResetSchema,
   type LoginResponse,
   type MfaSetupResponse,
 } from '@slotfill/shared';
@@ -56,6 +58,19 @@ export function authRoutes(service: AuthService, options: AuthRoutesOptions): Ro
     const { token } = await service.verifyMfa(auth, code, req.ip);
     res.cookie(SESSION_COOKIE, token, cookie);
     res.json(await service.me(auth));
+  });
+
+  /** Always 202, whether or not the email exists (no account enumeration). */
+  router.post('/password/forgot', limiter, async (req, res) => {
+    const { email } = passwordForgotSchema.parse(req.body);
+    await service.requestPasswordReset(email, req.ip);
+    res.status(202).end();
+  });
+
+  router.post('/password/reset', limiter, async (req, res) => {
+    const { token, password } = passwordResetSchema.parse(req.body);
+    await service.resetPassword(token, password, req.ip);
+    res.status(204).end();
   });
 
   router.post('/logout', requireSession, async (req, res) => {

@@ -1,19 +1,13 @@
 import type { Job, JobResult, PgBoss } from 'pg-boss';
-import type { Database } from '../db/client';
-import type { Logger } from '../lib/logger';
-import type { EhrSyncService } from '../modules/ehr/sync';
-import { jobSchemas, type JobQueue, type QueueName } from './queues';
+import type { Services } from '../services';
+import { jobSchemas, type QueueName } from './queues';
 
 export const SYNC_CRON = '*/2 * * * *';
 /** 07:00 UTC is ~2-3 AM in US time zones. */
 export const RESYNC_CRON = '0 7 * * *';
 
-export interface JobDeps {
-  db: Database;
-  jobs: JobQueue;
-  sync: EhrSyncService;
-  logger: Logger;
-}
+/** Handlers get the full service container. */
+export type JobDeps = Services;
 
 /** Fan out one `ehr.sync` per tenant with an active EHR connection (pre-tenant lookup). */
 export async function enqueueSyncForAllTenants(
@@ -41,14 +35,43 @@ export const jobHandlers: {
   'ehr.resync-all': async (deps) => {
     await enqueueSyncForAllTenants(deps, 'full');
   },
-  'appointment.changed': (deps, job) => {
+  'appointment.changed': async (deps, job) => {
     const data = jobSchemas['appointment.changed'].parse(job.data);
-    // Phase 4 (reminders) and Phase 5 (offer engine) react here. IDs only in logs.
-    deps.logger.debug(
-      { tenantId: data.tenantId, appointmentId: data.appointmentId, change: data.change },
-      'appointment changed',
+    // Each reacts in its own tenant transaction; all are idempotent, so a retry is safe.
+    await deps.reminders.onAppointmentChanged(data);
+    await deps.offers.onAppointmentChanged(data);
+    await deps.waitlist.onAppointmentChanged(data);
+  },
+  'sms.send': async (deps, job) => {
+    const { tenantId, messageId } = jobSchemas['sms.send'].parse(job.data);
+    await deps.messaging.deliver(tenantId, messageId);
+  },
+  'reminder.send': async (deps, job) => {
+    const { tenantId, reminderId } = jobSchemas['reminder.send'].parse(job.data);
+    await deps.reminders.send(tenantId, reminderId);
+  },
+  'appointment.cancel-by-patient': async (deps, job) => {
+    await deps.reminders.cancelByPatient(
+      jobSchemas['appointment.cancel-by-patient'].parse(job.data),
     );
-    return Promise.resolve();
+  },
+  'offer.next-batch': async (deps, job) => {
+    await deps.offers.sendNextBatch(jobSchemas['offer.next-batch'].parse(job.data));
+  },
+  'offer.expire': async (deps, job) => {
+    const { tenantId, offerId } = jobSchemas['offer.expire'].parse(job.data);
+    await deps.offers.expire(tenantId, offerId);
+  },
+  'offer.accept': async (deps, job) => {
+    const { tenantId, recipientId } = jobSchemas['offer.accept'].parse(job.data);
+    await deps.offers.accept(tenantId, recipientId);
+  },
+  'reminder.replan-tenant': async (deps, job) => {
+    const { tenantId } = jobSchemas['reminder.replan-tenant'].parse(job.data);
+    await deps.reminders.replanTenant(tenantId);
+  },
+  'alert.email': async (deps, job) => {
+    await deps.alerts.send(jobSchemas['alert.email'].parse(job.data));
   },
 };
 
@@ -57,11 +80,28 @@ export const jobHandlers: {
  * full); `ehr.sync` runs several tenants at once (its stately policy still allows only one sync
  * per tenant at a time).
  */
-const WORK_OPTIONS: Record<QueueName, { batchSize: number; localConcurrency: number }> = {
+const WORK_OPTIONS: Record<
+  QueueName,
+  { batchSize: number; localConcurrency: number; pollingIntervalSeconds?: number }
+> = {
   'ehr.sync': { batchSize: 1, localConcurrency: 4 },
   'ehr.sync-all': { batchSize: 1, localConcurrency: 1 },
   'ehr.resync-all': { batchSize: 1, localConcurrency: 1 },
   'appointment.changed': { batchSize: 50, localConcurrency: 2 },
+  // Texts are latency-sensitive (first YES wins): no head-of-line batching.
+  'sms.send': { batchSize: 1, localConcurrency: 5, pollingIntervalSeconds: 0.5 },
+  'reminder.send': { batchSize: 20, localConcurrency: 2 },
+  'appointment.cancel-by-patient': {
+    batchSize: 1,
+    localConcurrency: 2,
+    pollingIntervalSeconds: 0.5,
+  },
+  'offer.next-batch': { batchSize: 10, localConcurrency: 2, pollingIntervalSeconds: 1 },
+  'offer.expire': { batchSize: 20, localConcurrency: 1 },
+  // A patient is waiting for the answer to their YES.
+  'offer.accept': { batchSize: 1, localConcurrency: 5, pollingIntervalSeconds: 0.5 },
+  'reminder.replan-tenant': { batchSize: 1, localConcurrency: 1 },
+  'alert.email': { batchSize: 5, localConcurrency: 1 },
 };
 
 /** Runs a fetched batch, settling each job on its own so one failure doesn't fail its neighbors. */

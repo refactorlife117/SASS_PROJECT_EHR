@@ -1,10 +1,14 @@
 import { createDatabase } from './db/client';
 import { enqueueSyncForAllTenants, registerJobHandlers } from './jobs/handlers';
 import { createBoss, createJobQueue, createQueues } from './jobs/queues';
+import { systemClock } from './lib/clock';
+import { createFieldCipher } from './lib/crypto';
+import { createEmailSender } from './lib/email';
 import { loadWorkerEnv } from './lib/env';
 import { createLogger } from './lib/logger';
-import { EhrSyncService } from './modules/ehr/sync';
-import { createEhrAdapterFactory } from './providers/ehr';
+import { createEhrAdapterFactory, drChronoConfigFromEnv } from './providers/ehr';
+import { createSmsProviders } from './providers/sms';
+import { createServices } from './services';
 
 const env = loadWorkerEnv();
 const logger = createLogger({ level: env.LOG_LEVEL, nodeEnv: env.NODE_ENV });
@@ -18,16 +22,23 @@ boss.on('error', (err: Error) => {
 await boss.start();
 await createQueues(boss);
 
-const jobs = createJobQueue(boss);
-const deps = {
+const services = createServices({
   db,
-  jobs,
+  jobs: createJobQueue(boss),
   logger,
-  sync: new EhrSyncService({ db, jobs, adapterFor: createEhrAdapterFactory({ db }), logger }),
-};
-await registerJobHandlers(boss, deps);
+  clock: systemClock,
+  sms: createSmsProviders(env),
+  email: createEmailSender(env),
+  appBaseUrl: env.APP_BASE_URL,
+  adapterFor: createEhrAdapterFactory({
+    db,
+    cipher: createFieldCipher(env.ENCRYPTION_KEY),
+    drchrono: drChronoConfigFromEnv(env),
+  }),
+});
+await registerJobHandlers(boss, services);
 // Don't wait for the first cron tick: backfill new connections and catch up right away.
-const tenants = await enqueueSyncForAllTenants(deps, 'incremental');
+const tenants = await enqueueSyncForAllTenants(services, 'incremental');
 logger.info({ tenants }, 'worker started');
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {

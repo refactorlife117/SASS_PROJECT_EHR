@@ -10,6 +10,7 @@ import { createEhrAdapterFactory } from '../src/providers/ehr';
 import { createMockAppointment, createMockEhr, inDays } from './ehr-fixtures';
 import {
   admin,
+  cipher,
   auditActions,
   buildTestApp,
   createTenant,
@@ -25,7 +26,7 @@ const app = buildTestApp(ctx);
 const sync = new EhrSyncService({
   db: ctx.db,
   jobs: ctx.jobs,
-  adapterFor: createEhrAdapterFactory({ db: ctx.db }),
+  adapterFor: createEhrAdapterFactory({ db: ctx.db, cipher }),
   logger: silentLogger,
 });
 const SECRET_A = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';

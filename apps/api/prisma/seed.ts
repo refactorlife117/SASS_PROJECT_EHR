@@ -11,12 +11,21 @@ import { generateMockEhr } from './mock-ehr-data';
 
 const DEV_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'slotfill-dev-password';
 const RESET_MOCK = process.env.SEED_RESET_MOCK === '1';
+/** Illustrative values for the mock EHR's visit-type codes (USD cents). */
+const DEMO_VISIT_VALUES_CENTS: Record<string, number> = {
+  NEW: 25_000,
+  PHYSICAL: 22_000,
+  FOLLOWUP: 15_000,
+  SICK: 12_000,
+  TELE: 9_000,
+};
 
 const TENANTS: {
   id: string;
   name: string;
   timezone: string;
   smsNumber: string;
+  contactPhone: string;
   seed: number;
   users: { email: string; role: UserRole }[];
 }[] = [
@@ -25,6 +34,7 @@ const TENANTS: {
     name: 'Maple Family Clinic',
     timezone: 'America/New_York',
     smsNumber: '+15550100001',
+    contactPhone: '(555) 010-0001',
     seed: 1001,
     users: [
       { email: 'owner@maple.test', role: 'owner' },
@@ -36,6 +46,7 @@ const TENANTS: {
     name: 'Cedar Pediatrics',
     timezone: 'America/Chicago',
     smsNumber: '+15550100002',
+    contactPhone: '(555) 010-0002',
     seed: 2002,
     users: [
       { email: 'owner@cedar.test', role: 'owner' },
@@ -87,7 +98,9 @@ async function seedMockEhr(prisma: Db, tenant: (typeof TENANTS)[number]): Promis
 async function main(): Promise<void> {
   const url = process.env.MIGRATE_DATABASE_URL;
   if (!url) throw new Error('MIGRATE_DATABASE_URL is required');
-  if (process.env.NODE_ENV === 'production') {
+  // Staging runs production builds (NODE_ENV=production) with synthetic data; only real production
+  // (APP_ENV=production) must never get demo tenants/users.
+  if (process.env.APP_ENV === 'production') {
     throw new Error('Refusing to seed demo data in production');
   }
 
@@ -97,7 +110,12 @@ async function main(): Promise<void> {
 
   try {
     for (const tenant of TENANTS) {
-      const fields = { name: tenant.name, timezone: tenant.timezone, smsNumber: tenant.smsNumber };
+      const fields = {
+        name: tenant.name,
+        timezone: tenant.timezone,
+        smsNumber: tenant.smsNumber,
+        contactPhone: tenant.contactPhone,
+      };
       await prisma.tenant.upsert({
         where: { id: tenant.id },
         create: { id: tenant.id, ...fields },
@@ -126,6 +144,14 @@ async function main(): Promise<void> {
         `  ${tenant.name}: ${tenant.users.map((u) => `${u.email} (${u.role})`).join(', ')}\n` +
           `    mock EHR: ${await seedMockEhr(prisma, tenant)}`,
       );
+      // Demo visit values (drive "revenue recovered"). Visit types appear once the worker has
+      // synced; only unset (0) values are filled, so values edited in Settings are kept.
+      for (const [code, cents] of Object.entries(DEMO_VISIT_VALUES_CENTS)) {
+        await prisma.visitType.updateMany({
+          where: { tenantId: tenant.id, code, estimatedValueCents: 0 },
+          data: { estimatedValueCents: cents },
+        });
+      }
     }
   } finally {
     await prisma.$disconnect();

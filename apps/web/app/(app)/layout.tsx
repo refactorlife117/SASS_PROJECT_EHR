@@ -4,13 +4,20 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useLogout, useMe } from '@/hooks/useAuth';
+import { devToolsEnabled } from '@/lib/dev-tools';
 
 const NAV = [
   { href: '/', label: 'Dashboard' },
   { href: '/appointments', label: 'Appointments' },
+  { href: '/waitlist', label: 'Waitlist' },
+  { href: '/offers', label: 'Offers' },
+  { href: '/messages', label: 'Messages' },
+  { href: '/settings', label: 'Settings' },
 ];
-const DEV_NAV = [{ href: '/dev/ehr', label: 'Mock EHR' }];
-const isDev = process.env.NODE_ENV === 'development';
+const DEV_NAV = [
+  { href: '/dev/ehr', label: 'Mock EHR' },
+  { href: '/dev/phone', label: 'Phone sim' },
+];
 
 /** Signed-in shell: redirects to /login without a full (MFA-verified) session. */
 export default function AppLayout({ children }: { children: ReactNode }) {
@@ -26,7 +33,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   if (me.isPending || me.data === null) return <p className="app-main muted">Loading…</p>;
   if (me.isError) return <p className="app-main error">Could not reach the server.</p>;
 
-  const links = isDev ? [...NAV, ...DEV_NAV] : NAV;
+  const links = devToolsEnabled ? [...NAV, ...DEV_NAV] : NAV;
   return (
     <>
       <header className="app-header">

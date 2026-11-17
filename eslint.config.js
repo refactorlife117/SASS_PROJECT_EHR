@@ -11,6 +11,8 @@ export default tseslint.config(
       '**/coverage/**',
       '**/next-env.d.ts',
       '**/src/generated/**',
+      // Standalone npm project, checked in a Linux container (see docs/deploy.md).
+      'infra/**',
     ],
   },
   js.configs.recommended,

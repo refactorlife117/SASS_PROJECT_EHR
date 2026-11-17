@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/cdk.out
+**/src/generated
+**/*.tmp.ts
+.env
+.env.*
+!.env.example
+.git
+docs

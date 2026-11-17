@@ -67,7 +67,8 @@ export class EhrSyncService {
       const fetched = await this.fetch(tenantId, adapter, mode, connection.lastSyncedAt, startedAt);
       const result = await db.withTenant(
         tenantId,
-        (tx) => this.apply(tx, tenantId, fetched, mode, startedAt),
+        (tx) =>
+          this.apply(tx, tenantId, fetched, mode, startedAt, connection.lastSyncedAt === null),
         { timeoutMs: SYNC_TX_TIMEOUT_MS },
       );
       logger.info({ tenantId, ...result }, 'ehr sync completed');
@@ -150,6 +151,7 @@ export class EhrSyncService {
     fetched: Fetched,
     mode: SyncMode,
     startedAt: Date,
+    initialBackfill: boolean,
   ): Promise<SyncResult> {
     for (const p of fetched.providers) {
       await tx.provider.upsert({
@@ -250,7 +252,14 @@ export class EhrSyncService {
       if (change) {
         await this.deps.jobs.send(
           'appointment.changed',
-          { tenantId, appointmentId, change, previousStatus: prev?.status ?? null, status },
+          {
+            tenantId,
+            appointmentId,
+            change,
+            previousStatus: prev?.status ?? null,
+            status,
+            ...(initialBackfill ? { backfill: true } : {}),
+          },
           undefined,
           tx,
         );

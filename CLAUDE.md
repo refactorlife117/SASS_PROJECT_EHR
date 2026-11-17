@@ -2,7 +2,7 @@
 
 Multi-tenant SaaS for small US medical clinics. It sends SMS appointment reminders, detects cancelled slots and offers them by SMS to waitlisted patients (first YES wins), books the patient who accepts into the clinic's EHR, and shows the clinic how many slots were filled and how much revenue was recovered. The EHR is the source of truth for schedules and patients. SlotFill owns the waitlist, offers, messaging, consent and metrics.
 
-**Current phase: 2 — Mock EHR + sync (in review)** (see [docs/phases.md](docs/phases.md); update this line when a phase is accepted)
+**Current phase: all phases built. Remaining steps need your accounts: AWS deploy (Phase 7) and DrChrono sandbox check (Phase 8). See docs/USAGE.md and docs/deploy.md**
 
 ## Stack
 
@@ -43,6 +43,8 @@ pnpm monorepo · TypeScript strict · Express API + pg-boss worker (same codebas
 | What to build now / acceptance criteria                     | [docs/phases.md](docs/phases.md)                                              |
 | Local setup, env vars                                       | [docs/dev-setup.md](docs/dev-setup.md)                                        |
 | Open questions / decisions made                             | [docs/decisions.md](docs/decisions.md)                                        |
+| Deploying to AWS (runbook)                                  | [docs/deploy.md](docs/deploy.md)                                              |
+| How to use / try each phase                                 | [docs/USAGE.md](docs/USAGE.md)                                                |
 | Full original plan (canonical)                              | [docs/PLAN.md](docs/PLAN.md)                                                  |
 
 ## Agents (run only when the user asks)

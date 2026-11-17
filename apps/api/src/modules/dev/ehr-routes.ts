@@ -17,11 +17,16 @@ import { AppError } from '../../lib/errors';
 import { MockEhr } from '../../providers/ehr/mock';
 import { EhrSlotUnavailableError } from '../../providers/ehr/types';
 import { authOf, requireAuth } from '../auth/middleware';
+import type { ReminderService } from '../reminders/service';
 
 const SNAPSHOT_DAYS = 14;
 const idParam = z.object({ id: z.uuid() });
 
-export function devEhrRoutes(deps: { db: Database; jobs: JobQueue }): Router {
+export function devEhrRoutes(deps: {
+  db: Database;
+  jobs: JobQueue;
+  reminders: ReminderService;
+}): Router {
   const router = Router();
   router.use(requireAuth);
 
@@ -129,6 +134,29 @@ export function devEhrRoutes(deps: { db: Database; jobs: JobQueue }): Router {
   router.post('/sync', async (req, res) => {
     await notifySlotFill(authOf(req).tenantId);
     res.status(202).end();
+  });
+
+  /** Send the reminder text for a (mock EHR) appointment right now, ignoring its schedule and quiet hours. */
+  router.post('/appointments/:id/remind-now', async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const { tenantId } = authOf(req);
+    const appt = await deps.db.withTenant(tenantId, (tx) =>
+      tx.appointment.findUnique({
+        where: { tenantId_ehrAppointmentId: { tenantId, ehrAppointmentId: id } },
+      }),
+    );
+    if (!appt)
+      throw new AppError(
+        409,
+        'not_synced',
+        'Not synced into SlotFill yet; wait a moment and retry',
+      );
+    res.json({ outcome: await deps.reminders.sendNow(tenantId, appt.id) });
+  });
+
+  /** (Re)plan reminders for every upcoming appointment, e.g. ones synced before reminders existed. */
+  router.post('/reminders/replan', async (req, res) => {
+    res.json({ appointments: await deps.reminders.replanTenant(authOf(req).tenantId) });
   });
 
   return router;

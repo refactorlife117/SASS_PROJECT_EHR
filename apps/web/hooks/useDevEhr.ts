@@ -60,3 +60,19 @@ export function useDevEhrSyncNow() {
   const onSuccess = useInvalidateAfterChange();
   return useMutation({ mutationFn: () => apiPostNoContent('/dev/ehr/sync'), onSuccess });
 }
+
+export function useDevEhrRemindNow() {
+  return useMutation({
+    mutationFn: (mockAppointmentId: string) =>
+      apiPost(
+        `/dev/ehr/appointments/${mockAppointmentId}/remind-now`,
+        z.object({ outcome: z.string() }),
+      ),
+  });
+}
+
+export function useDevEhrReplan() {
+  return useMutation({
+    mutationFn: () => apiPost('/dev/ehr/reminders/replan', z.object({ appointments: z.number() })),
+  });
+}

@@ -9,12 +9,17 @@ export interface FieldCipher {
   decrypt(payload: Uint8Array): string;
 }
 
+/** A 32-byte key given as 64 hex characters (what Secrets Manager can generate) or base64. */
+export function parseKey(value: string): Buffer {
+  return /^[0-9a-fA-F]{64}$/.test(value) ? Buffer.from(value, 'hex') : Buffer.from(value, 'base64');
+}
+
 /**
  * AES-256-GCM for secrets stored in the DB (MFA secrets, EHR credentials).
  * Layout: [version (1)] [iv (12)] [auth tag (16)] [ciphertext].
  */
-export function createFieldCipher(keyBase64: string): FieldCipher {
-  const key = Buffer.from(keyBase64, 'base64');
+export function createFieldCipher(keyText: string): FieldCipher {
+  const key = parseKey(keyText);
   if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
 
   return {

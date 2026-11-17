@@ -48,3 +48,11 @@ export const apiPost = <T extends z.ZodType>(path: string, schema: T, body?: unk
 export const apiPostNoContent = async (path: string, body?: unknown): Promise<void> => {
   await send('POST', path, body);
 };
+export const apiPatch = <T extends z.ZodType>(path: string, schema: T, body: unknown) =>
+  sendJson('PATCH', path, schema, body);
+export const apiPatchNoContent = async (path: string, body: unknown): Promise<void> => {
+  await send('PATCH', path, body);
+};
+export const apiDeleteNoContent = async (path: string): Promise<void> => {
+  await send('DELETE', path);
+};

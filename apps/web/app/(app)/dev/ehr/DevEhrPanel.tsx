@@ -14,6 +14,8 @@ import {
   useDevEhrCreate,
   useDevEhrMove,
   useDevEhrState,
+  useDevEhrRemindNow,
+  useDevEhrReplan,
   useDevEhrSyncNow,
 } from '@/hooks/useDevEhr';
 import { ApiError } from '@/lib/api';
@@ -26,6 +28,7 @@ const errorText = (error: unknown): string =>
 export function DevEhrPanel() {
   const state = useDevEhrState();
   const syncNow = useDevEhrSyncNow();
+  const replan = useDevEhrReplan();
 
   if (state.isPending) return <p className="muted">Loading mock EHR…</p>;
   if (state.isError) return <p className="error">Could not load the mock EHR.</p>;
@@ -60,6 +63,19 @@ export function DevEhrPanel() {
         >
           Sync now
         </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={replan.isPending}
+          onClick={() => {
+            replan.mutate();
+          }}
+        >
+          Plan reminders
+        </button>
+        {replan.data && (
+          <span className="muted">{replan.data.appointments} upcoming appointments planned</span>
+        )}
       </div>
       <CreateForm data={data} />
       <ScheduleTable data={data} />
@@ -122,6 +138,7 @@ function CreateForm({ data }: { data: DevEhrState }) {
 
 function ScheduleTable({ data }: { data: DevEhrState }) {
   const cancel = useDevEhrCancel();
+  const remindNow = useDevEhrRemindNow();
   const move = useDevEhrMove();
   const [moving, setMoving] = useState<{ id: string; date: string; time: string } | null>(null);
   const providerNames = new Map(data.providers.map((p) => [p.id, p.displayName]));
@@ -129,6 +146,10 @@ function ScheduleTable({ data }: { data: DevEhrState }) {
   return (
     <>
       {move.isError && <p className="error">{errorText(move.error)}</p>}
+      {remindNow.data && <p className="muted">Reminder: {remindNow.data.outcome}</p>}
+      {remindNow.isError && (
+        <p className="error">Not synced into SlotFill yet. Try again in a moment.</p>
+      )}
       <table className="table">
         <thead>
           <tr>
@@ -203,6 +224,17 @@ function ScheduleTable({ data }: { data: DevEhrState }) {
                     appt.status !== 'cancelled' &&
                     appt.status !== 'completed' && (
                       <>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={remindNow.isPending}
+                          title="Send this appointment's reminder text now (see Phone sim)"
+                          onClick={() => {
+                            remindNow.mutate(appt.id);
+                          }}
+                        >
+                          Remind now
+                        </button>
                         <button
                           type="button"
                           className="secondary"

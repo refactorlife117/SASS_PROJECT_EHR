@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type SubmitEvent } from 'react';
 import { useLogin } from '@/hooks/useAuth';
@@ -64,6 +65,9 @@ export default function LoginPage() {
           {login.isPending ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+      <p className="muted">
+        <Link href="/forgot-password">Forgot password?</Link>
+      </p>
     </main>
   );
 }
