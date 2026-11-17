@@ -4,7 +4,7 @@ dist/
 coverage/
 *.tsbuildinfo
 next-env.d.ts
-.env
-.env.*
-!.env.example
+# .env
+# .env.*
+# .env.example
 *.log
