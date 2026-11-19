@@ -6,6 +6,8 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import type { FieldCipher } from './lib/crypto';
 import { createErrorHandler, notFoundHandler } from './lib/errors';
+import { adminRoutes } from './modules/admin/routes';
+import { AdminService } from './modules/admin/service';
 import { appointmentRoutes } from './modules/appointments/routes';
 import { loadSession } from './modules/auth/middleware';
 import { authRoutes } from './modules/auth/routes';
@@ -19,6 +21,8 @@ import { messageRoutes } from './modules/messaging/routes';
 import { smsWebhookRoutes } from './modules/messaging/webhook-routes';
 import { offerRoutes } from './modules/offers/routes';
 import { settingsRoutes } from './modules/settings/routes';
+import { userRoutes } from './modules/users/routes';
+import { UserService } from './modules/users/service';
 import { waitlistRoutes } from './modules/waitlist/routes';
 import type { DrChronoConfig } from './providers/ehr/drchrono';
 import type { Services } from './services';
@@ -76,6 +80,9 @@ export function createApp(deps: AppDeps): Express {
     appBaseUrl: services.appBaseUrl,
     clock: services.clock,
   });
+  const mail = { email: services.email, appBaseUrl: services.appBaseUrl, clock: services.clock };
+  const userService = new UserService(db, mail);
+  const adminService = new AdminService(db, { ...mail, sms: services.sms });
 
   const v1 = express.Router();
   v1.get('/health', (_req, res) => {
@@ -117,6 +124,8 @@ export function createApp(deps: AppDeps): Express {
   v1.use(waitlistRoutes({ db, waitlist: services.waitlist, clock: services.clock }));
   v1.use(offerRoutes({ db, offers: services.offers }));
   v1.use(settingsRoutes({ db, jobs: services.jobs, sms: services.sms }));
+  v1.use(userRoutes(userService));
+  v1.use('/admin', adminRoutes(adminService));
   v1.use(
     ehrConnectRoutes({
       db,

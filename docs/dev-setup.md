@@ -21,6 +21,7 @@ pnpm dev                    # api :4000, worker, web :3000
 | -------------------------------------- | -------------------------------------- | ----------------------- |
 | Maple Family Clinic (America/New_York) | `owner@maple.test`, `staff@maple.test` | `slotfill-dev-password` |
 | Cedar Pediatrics (America/Chicago)     | `owner@cedar.test`, `staff@cedar.test` | `slotfill-dev-password` |
+| SlotFill admin console (`/admin`)      | `admin@slotfill.test` (platform admin) | `slotfill-dev-password` |
 
 The first login enrolls MFA: scan the QR code with any authenticator app. To reset a user's MFA in dev, run `UPDATE users SET mfa_enabled=false, mfa_secret_enc=NULL WHERE email=...` as the owner role. Override the password with `SEED_USER_PASSWORD`.
 

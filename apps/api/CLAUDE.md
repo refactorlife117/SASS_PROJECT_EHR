@@ -13,6 +13,7 @@ One codebase, two processes, both wired by `createServices(infra)` in `src/servi
 - `test`, `typecheck`
 - `db:generate`, `db:migrate`, `db:deploy`, `db:seed`
 - `db:bootstrap` / `db:release`: managed Postgres. Creates the app role and pg-boss schema, then runs migrations.
+- `admin:create-platform-admin <email>`: creates a SlotFill operator account and emails its invite (`src/scripts/`).
 
 The env comes from the repo-root `.env` (`src/lib/env.ts` validates it). The Prisma client is generated into `src/generated/prisma` (gitignored; regenerated on postinstall; no database needed).
 
@@ -39,6 +40,8 @@ The env comes from the repo-root `.env` (`src/lib/env.ts` validates it). The Pri
   | `alerts`       | staff emails                                                                        |
   | `appointments` | appointment and provider lists                                                      |
   | `dev`          | dev-only routes (development/staging)                                               |
+  | `users`        | team management for owners, `invites.ts` (invite links, team member shape)          |
+  | `admin`        | platform admin console: clinic onboarding, no PHI (`/api/v1/admin/*`)               |
 
 - **Providers** (`src/providers/`), the only abstractions:
   - `sms/{dev,aws,twilio}.ts`: a registry of configured providers; a clinic can pick one.
@@ -61,7 +64,7 @@ The env comes from the repo-root `.env` (`src/lib/env.ts` validates it). The Pri
   - `email`: staff emails;
   - `runJobs()`: a deterministic worker that honors deferred `startAfter` against the fake clock.
 - `buildTestApp(ctx, { devRoutes? })`.
-- Fixtures: `createTenant(name, { smsNumber, contactPhone, timezone })`, `createUser({ role, mfaSecret })`, `signIn`, `queuedJobs(queue)`, `auditActions`. `test/ehr-fixtures.ts` has the mock EHR; `test/fake-drchrono.ts` is a fake DrChrono API server.
+- Fixtures: `createTenant(name, { smsNumber, contactPhone, timezone, isPlatform })`, `createUser({ role, mfaSecret })`, `signIn`, `queuedJobs(queue)`, `auditActions`, `linkTokenFor(email, to)` (invite/reset link token), `errorCode(res)`. `test/ehr-fixtures.ts` has the mock EHR; `test/fake-drchrono.ts` is a fake DrChrono API server.
 - Unit tests live in `src/**/*.test.ts`.
 
 ## Rules specific to this app

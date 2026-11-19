@@ -14,6 +14,7 @@ const NAV = [
   { href: '/messages', label: 'Messages' },
   { href: '/settings', label: 'Settings' },
 ];
+const OWNER_NAV = [{ href: '/team', label: 'Team' }];
 const DEV_NAV = [
   { href: '/dev/ehr', label: 'Mock EHR' },
   { href: '/dev/phone', label: 'Phone sim' },
@@ -26,14 +27,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const me = useMe();
   const logout = useLogout();
 
+  const role = me.data?.user.role;
   useEffect(() => {
     if (me.data === null) router.replace('/login');
-  }, [me.data, router]);
+    // SlotFill's own operators have no clinic: their home is the admin console.
+    else if (role === 'platform_admin') router.replace('/admin');
+  }, [me.data, role, router]);
 
-  if (me.isPending || me.data === null) return <p className="app-main muted">Loading…</p>;
+  if (me.isPending || me.data === null || role === 'platform_admin') {
+    return <p className="app-main muted">Loading…</p>;
+  }
   if (me.isError) return <p className="app-main error">Could not reach the server.</p>;
 
-  const links = devToolsEnabled ? [...NAV, ...DEV_NAV] : NAV;
+  const links = [
+    ...NAV,
+    ...(role === 'owner' ? OWNER_NAV : []),
+    ...(devToolsEnabled ? DEV_NAV : []),
+  ];
   return (
     <>
       <header className="app-header">

@@ -9,7 +9,6 @@ import { ApiError, apiPostNoContent } from '@/lib/api';
 export default function ResetPasswordPage() {
   return (
     <main className="auth-card">
-      <h1>Choose a new password</h1>
       <Suspense fallback={<p className="muted">Loading…</p>}>
         <ResetForm />
       </Suspense>
@@ -18,7 +17,10 @@ export default function ResetPasswordPage() {
 }
 
 function ResetForm() {
-  const token = useSearchParams().get('token') ?? '';
+  const params = useSearchParams();
+  const token = params.get('token') ?? '';
+  // Invites reuse the reset flow: same single-use link, friendlier wording.
+  const isInvite = params.get('invite') === '1';
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const reset = useMutation({
@@ -31,15 +33,28 @@ function ResetForm() {
   }
 
   if (reset.isSuccess) {
-    return (
-      <p>
-        Password changed. You&apos;ve been signed out everywhere. <Link href="/login">Sign in</Link>{' '}
-        with the new password (you&apos;ll still need your authenticator code).
-      </p>
+    return isInvite ? (
+      <>
+        <h1>Welcome to SlotFill</h1>
+        <p>
+          Your password is set. <Link href="/login">Sign in</Link>, then scan the QR code with an
+          authenticator app (Google Authenticator, Microsoft Authenticator, Authy…) to finish.
+        </p>
+      </>
+    ) : (
+      <>
+        <h1>Choose a new password</h1>
+        <p>
+          Password changed. You&apos;ve been signed out everywhere.{' '}
+          <Link href="/login">Sign in</Link> with the new password (you&apos;ll still need your
+          authenticator code).
+        </p>
+      </>
     );
   }
   return (
     <form onSubmit={onSubmit}>
+      <h1>{isInvite ? 'Welcome to SlotFill: choose your password' : 'Choose a new password'}</h1>
       <label>
         New password (at least 12 characters)
         <input
@@ -69,7 +84,9 @@ function ResetForm() {
       {reset.isError && (
         <p className="error">
           {reset.error instanceof ApiError && reset.error.code === 'invalid_reset_token'
-            ? 'This link is invalid or has expired. Request a new one.'
+            ? isInvite
+              ? 'This invite link is invalid or has expired. Ask your clinic owner to resend it.'
+              : 'This link is invalid or has expired. Request a new one.'
             : 'Could not change the password.'}
         </p>
       )}

@@ -17,7 +17,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:bootstrap": "tsx --env-file-if-exists=../../.env prisma/bootstrap.ts",
-    "db:release": "pnpm run db:bootstrap && prisma migrate deploy"
+    "db:release": "pnpm run db:bootstrap && prisma migrate deploy",
+    "admin:create-platform-admin": "tsx --env-file-if-exists=../../.env src/scripts/create-platform-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-pinpoint-sms-voice-v2": "3.1169.0",

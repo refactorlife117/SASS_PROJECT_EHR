@@ -1,4 +1,5 @@
-import { meResponseSchema } from '@slotfill/shared';
+import { randomUUID } from 'node:crypto';
+import { meResponseSchema, teamListResponseSchema } from '@slotfill/shared';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -132,11 +133,16 @@ describe('withTenant (database level)', () => {
     );
   });
 
-  it('does not let the app role create tenants', async () => {
+  it('lets the app role create only the tenant its transaction is scoped to (admin onboarding)', async () => {
     const { a } = await twoTenants();
     await expect(
       db.withTenant(a.id, (tx) => tx.tenant.create({ data: { name: 'Rogue', timezone: 'UTC' } })),
-    ).rejects.toThrow(/permission denied/);
+    ).rejects.toThrow(/row-level security/);
+    const id = randomUUID();
+    await db.withTenant(id, (tx) =>
+      tx.tenant.create({ data: { id, name: 'New clinic', timezone: 'UTC' } }),
+    );
+    expect(await admin.tenant.count({ where: { id } })).toBe(1);
   });
 });
 
@@ -152,6 +158,25 @@ describe('isolation through the API', () => {
     const meB = meResponseSchema.parse((await agentB.get('/api/v1/auth/me')).body);
     expect([meA.tenant.id, meA.user.id]).toEqual([a.id, userA.id]);
     expect([meB.tenant.id, meB.user.id]).toEqual([b.id, userB.id]);
+  });
+
+  it('lets an owner see and change only their own clinic’s team', async () => {
+    const { a, userA, userB } = await twoTenants();
+    await admin.user.update({ where: { id: userA.id }, data: { role: 'owner' } });
+    const agentA = request.agent(app);
+    await signIn(agentA, 'a@a.test', SECRET_A);
+
+    const team = teamListResponseSchema.parse((await agentA.get('/api/v1/users')).body);
+    expect(team.users.map((u) => u.id)).toEqual([userA.id]);
+    for (const path of ['deactivate', 'reset-mfa', 'resend-invite', 'reactivate']) {
+      expect((await agentA.post(`/api/v1/users/${userB.id}/${path}`)).status).toBe(404);
+    }
+    expect((await agentA.patch(`/api/v1/users/${userB.id}`).send({ role: 'owner' })).status).toBe(
+      404,
+    );
+    const b = await admin.user.findUniqueOrThrow({ where: { id: userB.id } });
+    expect([b.role, b.disabledAt, b.mfaEnabled]).toEqual(['staff', null, true]);
+    expect(a.id).toBe(userA.tenantId);
   });
 
   it('writes audit entries only into the acting user’s tenant', async () => {

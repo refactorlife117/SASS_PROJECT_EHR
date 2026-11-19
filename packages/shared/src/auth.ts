@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-export const userRoleSchema = z.enum(['owner', 'staff']);
+/** Roles inside a clinic. Owners manage settings and the team; staff run the waitlist and offers. */
+export const clinicRoleSchema = z.enum(['owner', 'staff']);
+export type ClinicRole = z.infer<typeof clinicRoleSchema>;
+
+/** Every role, including SlotFill's own platform admins (who never belong to a clinic). */
+export const userRoleSchema = z.enum(['owner', 'staff', 'platform_admin']);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
 export const loginRequestSchema = z.object({

@@ -55,6 +55,10 @@ const TENANTS: {
   },
 ];
 
+/** SlotFill's own operator account for the /admin console. Not a clinic. */
+const PLATFORM_TENANT_ID = '00000000-0000-4000-8000-000000000001';
+const PLATFORM_ADMIN_EMAIL = 'admin@slotfill.test';
+
 type Db = PrismaClient;
 
 async function seedMockEhr(prisma: Db, tenant: (typeof TENANTS)[number]): Promise<string> {
@@ -153,6 +157,23 @@ async function main(): Promise<void> {
         });
       }
     }
+    // The platform tenant must exist before its admin (a trigger checks the pairing).
+    await prisma.tenant.upsert({
+      where: { id: PLATFORM_TENANT_ID },
+      create: { id: PLATFORM_TENANT_ID, name: 'SlotFill', timezone: 'UTC', isPlatform: true },
+      update: {},
+    });
+    await prisma.user.upsert({
+      where: { email: PLATFORM_ADMIN_EMAIL },
+      create: {
+        tenantId: PLATFORM_TENANT_ID,
+        email: PLATFORM_ADMIN_EMAIL,
+        role: 'platform_admin',
+        passwordHash,
+      },
+      update: { passwordHash },
+    });
+    summaries.push(`  SlotFill admin console (/admin): ${PLATFORM_ADMIN_EMAIL} (platform_admin)`);
   } finally {
     await prisma.$disconnect();
   }

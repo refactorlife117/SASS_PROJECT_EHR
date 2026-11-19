@@ -320,3 +320,28 @@ Run the automated checks with `pnpm typecheck && pnpm lint && pnpm test`. Tests 
   2. **Settings** now offers _dev_ and _twilio_.
   3. For inbound, point the Twilio number's messaging webhook at `<public URL>/api/v1/webhooks/sms/twilio`. `APP_BASE_URL` must be that public URL, because the signature covers it.
 - **In AWS:** only after signing Twilio's BAA. Create a secret `{"accountSid","authToken"}` and deploy with `-c twilioSecretArn=<arn> -c twilioBaaSigned=true`.
+
+## Admin console and team management (added 2026-11-19)
+
+**What you get**
+
+- **Admin console** (`/admin`) for SlotFill's own operators (role `platform_admin`):
+  - list every clinic with its texting number, user counts and EHR status;
+  - **Add a clinic**: name, time zone, optional clinic phone and texting number, and the owner's email. It creates the clinic with default settings and emails the owner an invite;
+  - a clinic page to edit its details, assign its texting number and SMS provider, see its users, invite another user (e.g. a replacement owner) and resend invites.
+  - It never shows patients, appointments or messages. Every action is audited in that clinic's log as `platform.*`.
+- **Team page** (`/team`, clinic owners only): invite staff or owners by email, change roles, resend invites, reset someone's two-factor (lost phone), deactivate and reactivate. Owners can't change or deactivate themselves, so a clinic always keeps an active owner.
+- **Invites:** a single-use link valid 7 days. The invitee chooses a password, signs in and enrolls two-factor. "Forgot password" also works for someone who lost their invite.
+- **Deactivated users** are signed out immediately and can't sign in or reset their password; they stay listed for the audit trail.
+
+**Try it**
+
+1. Sign in as `admin@slotfill.test` (password `slotfill-dev-password`; first sign-in enrolls MFA). You land on **Clinics**, not a clinic dashboard.
+2. **Add a clinic** with an owner email such as `owner@birch.test`. Open Mailpit (http://localhost:8025): the invite is there.
+3. Open the link, choose a password, sign in as the new owner and enroll MFA. You land on the new, empty clinic. Its EHR is connected from **Settings**.
+4. As that owner (or `owner@maple.test`), open **Team**: invite `staff@birch.test`, then try **Resend invite**, **Reset two-factor** and **Deactivate**. A deactivated user's open session ends on its next request.
+5. Sign in as a clinic user and visit `/admin`: you're sent back to the dashboard. The API answers 403.
+
+**In production:** create your first platform admin with `admin:create-platform-admin <email>` (see deploy.md, "First platform admin"). After that, everything happens in the browser.
+
+**Where it lives:** `apps/api/src/modules/admin/` (console), `modules/users/` (team, invites), `src/scripts/create-platform-admin.ts`, migration `20261119090000_admin_and_user_management`; web `app/admin/`, `app/(app)/team/`.

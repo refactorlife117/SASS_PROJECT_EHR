@@ -13,6 +13,8 @@ datasource db {
 enum UserRole {
   owner
   staff
+  // SlotFill operator. Only ever in the single platform tenant (enforced by a DB trigger).
+  platform_admin
 
   @@map("user_role")
 }
@@ -34,6 +36,8 @@ model Tenant {
   contactPhone String?  @map("contact_phone")
   // SMS provider for this clinic (dev | aws | twilio); null = the deployment default.
   smsProvider  String?  @map("sms_provider")
+  // The one internal tenant that holds SlotFill's platform admins. Never a clinic.
+  isPlatform   Boolean  @default(false) @map("is_platform")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   settings        TenantSettings?
@@ -88,6 +92,10 @@ model User {
   // Password reset: SHA-256 of a single-use emailed token, and its expiry. The token is never stored.
   resetTokenHash  String?   @unique @map("reset_token_hash")
   resetExpiresAt  DateTime? @map("reset_expires_at") @db.Timestamptz(6)
+  // Set while an invite is outstanding (the invite link is a reset token); cleared once a password is set.
+  invitedAt       DateTime? @map("invited_at") @db.Timestamptz(6)
+  // Deactivated users can't sign in, reset a password or keep sessions. Kept (not deleted) for the audit trail.
+  disabledAt      DateTime? @map("disabled_at") @db.Timestamptz(6)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)

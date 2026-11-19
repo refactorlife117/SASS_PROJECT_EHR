@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 
 const FORMAT_VERSION = 1;
 const IV_LENGTH = 12;
@@ -51,3 +51,7 @@ export const randomToken = (bytes = 32): string => randomBytes(bytes).toString('
 
 export const hmacSha256 = (secret: string, value: string): string =>
   createHmac('sha256', secret).update(value).digest('base64url');
+
+/** Hex SHA-256. For single-use tokens (password reset, invites): only the hash is stored. */
+export const sha256Hex = (value: string): string =>
+  createHash('sha256').update(value).digest('hex');

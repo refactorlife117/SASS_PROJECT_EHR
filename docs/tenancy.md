@@ -63,10 +63,17 @@ Planned: a lookup from tenant to SMS number for inbound SMS routing (Phase 3). A
 
 `ehr_list_active_connections()` (used by `enqueueSyncForAllTenants` in the worker) returns the tenant ids with an active EHR connection, and nothing else.
 
+`admin_list_clinics()` (platform admin console, `AdminService.listClinics`) returns per clinic: id, name, time zone, texting number, created_at, active/invited user counts, and EHR type/status/last sync. No patient data. Excludes the platform tenant.
+
+`platform_tenant_id()` (the `admin:create-platform-admin` script) returns the platform tenant's id, or NULL.
+
+The auth lookups (`auth_find_user_by_email`, `auth_find_session`, `auth_find_user_by_reset_token`) skip deactivated users (`users.disabled_at`).
+
 ## Privileges worth knowing
 
 - `audit_log` is **append-only** for the app (`SELECT, INSERT` only).
-- `tenants`: the app can `SELECT, UPDATE` its own row only. Tenants are provisioned by the owner role (seed, later an admin tool).
+- `tenants`: the app can `SELECT, UPDATE` its own row, and `INSERT` only the tenant its transaction is scoped to: admin onboarding creates a clinic inside `withTenant(<new id>)`, so the policy's `WITH CHECK` still applies.
+- **Platform tenant:** one tenant with `is_platform = true` holds SlotFill's platform admins (role `platform_admin`). A trigger (`users_role_matches_tenant`) rejects a platform admin in a clinic, or a clinic role in the platform tenant. Platform admins reach a clinic only through the `/admin` routes, which touch operational rows (`tenants`, `users`, `ehr_connections`), never PHI.
 - `_prisma_migrations`: no access for the app.
 
 ## Required test

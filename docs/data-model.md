@@ -82,6 +82,8 @@ Implemented so far: `tenants`, `tenant_settings`, `users`, `sessions`, `audit_lo
 - `users.mfa_last_time_step`: TOTP replay protection. `users.email` is stored lower-cased (CHECK constraint).
 - `tenant_settings.quiet_hours_*` are `"HH:MM"` text with a format CHECK, not `time`.
 - `tenants.sms_number` is nullable until a number is provisioned.
+- `tenants.is_platform`: the single internal tenant for platform admins. `user_role` also has `platform_admin`.
+- `users.invited_at` (set while an invite is pending; the invite link is a reset token) and `users.disabled_at` (deactivated).
 - `ehr_connections`: one per tenant (`tenant_id` unique). Adds `last_full_sync_at` and `last_error` (error class only). `status` is `active | error | disabled`. The app role can only SELECT/UPDATE it; connections are provisioned by the owner role.
 - `appointments` also has `created_at` and `updated_at`. `patients.mobile_e164` is nullable and has an E.164 CHECK.
 - `visit_types.estimated_value_cents` defaults to 0 and is never overwritten by sync (it belongs to the clinic).

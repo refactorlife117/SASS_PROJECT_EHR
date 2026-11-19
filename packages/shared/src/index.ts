@@ -1,3 +1,4 @@
+export * from './admin';
 export * from './appointments';
 export * from './auth';
 export * from './dashboard';
@@ -7,4 +8,5 @@ export * from './messages';
 export * from './offers';
 export * from './settings';
 export * from './time';
+export * from './users';
 export * from './waitlist';

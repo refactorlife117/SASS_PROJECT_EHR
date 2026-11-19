@@ -524,6 +524,11 @@ export class SlotFillStack extends Stack {
     new CfnOutput(this, 'ClusterName', { value: cluster.clusterName });
     new CfnOutput(this, 'ReleaseTaskDefinition', { value: releaseTaskDef.taskDefinitionArn });
     new CfnOutput(this, 'ReleaseSecurityGroup', { value: releaseSg.securityGroupId });
+    // One-off API-environment tasks, e.g. `admin:create-platform-admin` (see docs/deploy.md).
+    new CfnOutput(this, 'ApiTaskDefinition', { value: apiTaskDef.taskDefinitionArn });
+    new CfnOutput(this, 'ApiSecurityGroup', {
+      value: apiService.connections.securityGroups[0]?.securityGroupId ?? '',
+    });
     new CfnOutput(this, 'AppSubnets', { value: vpc.selectSubnets(appSubnets).subnetIds.join(',') });
   }
 }

@@ -1,6 +1,7 @@
 // Test-only helpers. The `admin` client connects as the OWNER role (bypasses RLS) and is used
 // solely for fixtures, cleanup and assertions. Application code under test uses the app role.
 import { PrismaPg } from '@prisma/adapter-pg';
+import { apiErrorSchema } from '@slotfill/shared';
 import { generate } from 'otplib';
 import type { Agent } from 'supertest';
 import { createApp } from '../src/app';
@@ -203,7 +204,12 @@ export async function queuedJobs(name: QueueName): Promise<unknown[]> {
 
 export async function createTenant(
   name: string,
-  options: { smsNumber?: string; contactPhone?: string; timezone?: string } = {},
+  options: {
+    smsNumber?: string;
+    contactPhone?: string;
+    timezone?: string;
+    isPlatform?: boolean;
+  } = {},
 ) {
   return admin.tenant.create({
     data: {
@@ -211,6 +217,7 @@ export async function createTenant(
       timezone: options.timezone ?? 'America/New_York',
       smsNumber: options.smsNumber ?? null,
       contactPhone: options.contactPhone ?? null,
+      isPlatform: options.isPlatform ?? false,
       settings: { create: {} },
     },
   });
@@ -234,6 +241,18 @@ export async function createUser(input: {
     },
   });
 }
+
+/** The single-use token in the most recent invite or reset email sent to `to`. */
+export function linkTokenFor(email: RecordingEmail, to: string): string {
+  const message = email.sent.findLast((m) => m.to === to);
+  const match = message?.text.match(/token=([^\s&]+)/);
+  if (!match?.[1]) throw new Error(`no link email for ${to}`);
+  return decodeURIComponent(match[1]);
+}
+
+/** The `error.code` of an API error response. */
+export const errorCode = (res: { body: unknown }): string =>
+  apiErrorSchema.parse(res.body).error.code;
 
 /** Current TOTP code for a secret. */
 export const totpCode = (secret: string): Promise<string> => generate({ secret });

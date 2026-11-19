@@ -1,4 +1,4 @@
-import { apiErrorSchema, meResponseSchema, mfaSetupResponseSchema } from '@slotfill/shared';
+import { meResponseSchema, mfaSetupResponseSchema } from '@slotfill/shared';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -8,6 +8,7 @@ import {
   createTenant,
   createTestContext,
   createUser,
+  errorCode,
   resetDb,
   signIn,
   TEST_PASSWORD,
@@ -30,8 +31,6 @@ async function seedUser(options: { mfa: boolean } = { mfa: true }) {
   });
   return { tenant, user };
 }
-
-const errorCode = (res: request.Response): string => apiErrorSchema.parse(res.body).error.code;
 
 const sessionCookie = (res: request.Response): string | undefined => {
   const raw = res.headers['set-cookie'] as unknown;

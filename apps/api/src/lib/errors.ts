@@ -14,6 +14,10 @@ export class AppError extends Error {
   }
 }
 
+/** A unique constraint rejected the write (e.g. an email or SMS number already in use). */
+export const isUniqueViolation = (err: unknown): boolean =>
+  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+
 export const notFoundHandler: RequestHandler = (_req, _res, next) => {
   next(new AppError(404, 'not_found', 'Route not found'));
 };

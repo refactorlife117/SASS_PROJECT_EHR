@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto';
 import type { MeResponse } from '@slotfill/shared';
 import { generateSecret, generateURI, verify as verifyTotp } from 'otplib';
 import type { Database } from '../../db/client';
 import type { UserRole } from '../../generated/prisma/client';
 import type { Clock } from '../../lib/clock';
-import { randomToken, type FieldCipher } from '../../lib/crypto';
+import { randomToken, sha256Hex, type FieldCipher } from '../../lib/crypto';
 import type { EmailSender } from '../../lib/email';
 import { AppError } from '../../lib/errors';
 import { recordAudit } from '../audit/audit';
@@ -30,7 +29,6 @@ const invalidCode = () => new AppError(401, 'invalid_mfa_code', 'Invalid code');
 
 /** Password reset links are valid this long and work once. */
 export const RESET_TOKEN_TTL_MS = 30 * 60_000;
-const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 interface ResetTokenRow {
   user_id: string;
@@ -60,7 +58,7 @@ export class AuthService {
       await tx.user.update({
         where: { id: user.user_id },
         data: {
-          resetTokenHash: sha256(token),
+          resetTokenHash: sha256Hex(token),
           resetExpiresAt: new Date(this.mail.clock.now().getTime() + RESET_TOKEN_TTL_MS),
         },
       });
@@ -87,7 +85,7 @@ export class AuthService {
   /** Set a new password with a reset token. Signs the user out everywhere; MFA stays required. */
   async resetPassword(token: string, newPassword: string, ip: string | undefined): Promise<void> {
     const rows = await this.db.unscoped.$queryRaw<ResetTokenRow[]>`
-      SELECT * FROM auth_find_user_by_reset_token(${sha256(token)})`;
+      SELECT * FROM auth_find_user_by_reset_token(${sha256Hex(token)})`;
     const found = rows[0];
     if (!found?.expires_at || found.expires_at <= this.mail.clock.now()) {
       throw new AppError(400, 'invalid_reset_token', 'This reset link is invalid or has expired');
@@ -96,7 +94,7 @@ export class AuthService {
     await this.db.withTenant(found.tenant_id, async (tx) => {
       await tx.user.update({
         where: { id: found.user_id },
-        data: { passwordHash, resetTokenHash: null, resetExpiresAt: null },
+        data: { passwordHash, resetTokenHash: null, resetExpiresAt: null, invitedAt: null },
       });
       await tx.session.deleteMany({ where: { userId: found.user_id } });
       await recordAudit(tx, found.tenant_id, {

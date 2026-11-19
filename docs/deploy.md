@@ -79,6 +79,14 @@ aws ecs run-task --cluster <ClusterName> --launch-type FARGATE --task-definition
 
 Then point DNS for the domain at the `LoadBalancerDns` output.
 
+**First platform admin** (your own account for the `/admin` console, once SES can send). Run the script with the **API** task definition, so it uses the app's database role and email settings. The invite link is emailed, never printed:
+
+```bash
+aws ecs run-task --cluster <ClusterName> --launch-type FARGATE --task-definition <ApiTaskDefinition>   --network-configuration "awsvpcConfiguration={subnets=[<AppSubnets>],securityGroups=[<ApiSecurityGroup>],assignPublicIp=DISABLED}"   --overrides '{"containerOverrides":[{"name":"Api","command":["pnpm","--filter","@slotfill/api","admin:create-platform-admin","you@yourcompany.com"]}]}'
+```
+
+Open the emailed link, choose a password, sign in, and enroll MFA. From then on you onboard clinics in the browser (**Admin → Clinics → Add a clinic**). `<ApiTaskDefinition>` and `<ApiSecurityGroup>` are stack outputs.
+
 ## Staging with synthetic data
 
 Run the seed through the release task definition with a command override. It refuses to run when `APP_ENV=production`:
